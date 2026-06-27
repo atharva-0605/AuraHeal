@@ -1,0 +1,11 @@
+# Ignore backend dependencies
+backend/.venv/
+backend/__pycache__/
+backend/storage/screenshots/*
+
+# Ignore frontend dependencies
+frontend/node_modules/
+frontend/dist/
+
+# Ignore environment variable keys
+backend/.env

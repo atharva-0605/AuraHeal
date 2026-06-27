@@ -23,6 +23,8 @@ class TestOrchestrator(unittest.TestCase):
         """Verify the routing decisions based on AgentState."""
         # Scenario 1: No anomalies -> end
         state_no_anomalies: AgentState = {
+            "job_id": "test-job",
+            "mode": "light",
             "target_url": "http://example.com",
             "ingestion_results": [],
             "detected_anomalies": [],
@@ -35,6 +37,8 @@ class TestOrchestrator(unittest.TestCase):
 
         # Scenario 2: Anomalies present, under max iteration limit -> continue
         state_with_anomalies: AgentState = {
+            "job_id": "test-job",
+            "mode": "light",
             "target_url": "http://example.com",
             "ingestion_results": [],
             "detected_anomalies": [
@@ -55,6 +59,8 @@ class TestOrchestrator(unittest.TestCase):
 
         # Scenario 3: Anomalies present, reached max iteration limit -> end
         state_max_iter: AgentState = {
+            "job_id": "test-job",
+            "mode": "light",
             "target_url": "http://example.com",
             "ingestion_results": [],
             "detected_anomalies": [
@@ -73,54 +79,48 @@ class TestOrchestrator(unittest.TestCase):
         }
         self.assertEqual(should_continue(state_max_iter), "end_workflow")
 
-    @patch("openai.AsyncOpenAI")
+    @patch("google.genai.Client")
     @patch("app.agents.orchestrator.settings")
     @patch("app.agents.orchestrator._encode_image")
-    def test_mock_graph_execution(self, mock_encode, mock_settings, mock_async_openai):
+    def test_mock_graph_execution(self, mock_encode, mock_settings, mock_genai_client):
         """Verify a full execution step through the graph with mocked VLM client."""
+        import json
         # Configure mocked settings
-        mock_settings.OPENAI_API_KEY = "test_key"
         mock_settings.ANTHROPIC_API_KEY = None
         mock_encode.return_value = "base64encodedimage"
         
         # Setup mock client instance
         mock_client = MagicMock()
-        mock_async_openai.return_value = mock_client
+        mock_genai_client.return_value = mock_client
         
-        # Configure mocked OpenAI responses
-        # Mocking VLM perception response
-        mock_parse_response = MagicMock()
-        mock_parse_response.choices = [
-            MagicMock(
-                message=MagicMock(
-                    parsed=PerceptionAnalysis(
-                        anomalies=[
-                            UIAnomaly(
-                                element_tag="header",
-                                element_id="main-header",
-                                element_classes="header nav",
-                                anomaly_type="misalignment",
-                                severity="medium",
-                                description="Header navigation elements are out of vertical alignment",
-                                target_file_hint="header.css"
-                            )
-                        ],
-                        structural_integrity_score=85
-                    )
-                )
-            )
-        ]
-        mock_client.beta.chat.completions.parse = AsyncMock(return_value=mock_parse_response)
-
-        # Mocking planning response
-        mock_create_response = MagicMock()
-        mock_create_response.choices = [
-            MagicMock(message=MagicMock(content="Update header.css: header { align-items: center; }"))
-        ]
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_create_response)
+        # Configure mocked GenAI responses
+        mock_perception_response = MagicMock()
+        mock_perception_response.text = json.dumps({
+            "anomalies": [
+                {
+                    "element_tag": "header",
+                    "element_id": "main-header",
+                    "element_classes": "header nav",
+                    "anomaly_type": "misalignment",
+                    "severity": "medium",
+                    "description": "Header navigation elements are out of vertical alignment",
+                    "target_file_hint": "header.css"
+                }
+            ],
+            "structural_integrity_score": 85
+        })
+        
+        mock_planning_response = MagicMock()
+        mock_planning_response.text = "Update header.css: header { align-items: center; }"
+        
+        mock_models = MagicMock()
+        mock_client.models = mock_models
+        mock_models.generate_content = MagicMock(side_effect=[mock_perception_response, mock_planning_response, mock_perception_response, mock_planning_response])
 
         # Setup initial state
         initial_state: AgentState = {
+            "job_id": "test-job",
+            "mode": "light",
             "target_url": "http://example.com",
             "ingestion_results": [{
                 "viewport": "Desktop",
@@ -136,8 +136,9 @@ class TestOrchestrator(unittest.TestCase):
 
         # Run orchestrator graph
         async def run_test():
-            result = await orchestrator_graph.ainvoke(initial_state)
-            return result
+            with patch.dict("os.environ", {"GEMINI_API_KEY": "test_key"}):
+                result = await orchestrator_graph.ainvoke(initial_state)
+                return result
 
         result = asyncio.run(run_test())
 
@@ -146,7 +147,6 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(result["detected_anomalies"][0].element_tag, "header")
         self.assertEqual(result["detected_anomalies"][0].anomaly_type, "misalignment")
         self.assertIn("Update header.css", result["mutation_manifest"])
-        # Since maximum_iterations=1 and iteration=1 after mutation node runs, should_continue will end
         self.assertEqual(result["current_iteration"], 1)
 
 if __name__ == "__main__":

@@ -22,8 +22,6 @@ class TestAPI(unittest.TestCase):
         """Verify POST /api/v1/heal/analyze queues job and returns status 202."""
         payload = {
             "url": "https://example.com",
-            "repository": "GitHub: auraheal-demo-repo",
-            "branch": "main",
             "mode": "light"
         }
         response = self.client.post("/api/v1/heal/analyze", json=payload)
