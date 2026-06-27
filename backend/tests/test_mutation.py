@@ -113,14 +113,15 @@ class TestMutation(unittest.TestCase):
         self.assertFalse(committed)
         mock_repo.index.commit.assert_not_called()
 
-    @patch("app.services.mutation.SourceMutationService.create_healing_branch")
-    @patch("app.services.mutation.SourceMutationService.apply_css_patch")
-    @patch("app.services.mutation.SourceMutationService.commit_and_stage_changes")
-    def test_orchestrator_execution(self, mock_commit, mock_patch, mock_branch):
+    @patch("app.services.mutation.execute_github_cloud_mutation")
+    @patch.dict(os.environ, {"GITHUB_TOKEN": "test-token"})
+    def test_orchestrator_execution(self, mock_cloud_mut):
         """Verify orchestrator strings workflow components cleanly."""
-        mock_branch.return_value = "auraheal/fix-visual-patch"
-        mock_patch.return_value = True
-        mock_commit.return_value = True
+        mock_cloud_mut.return_value = {
+            "pr_url": "https://github.com/atharva-0605/test/pull/1",
+            "pull_number": 1,
+            "active_branch": "auraheal-responsive-patch"
+        }
 
         manifest = MutationManifest(
             patches=[
@@ -138,7 +139,7 @@ class TestMutation(unittest.TestCase):
         result = asyncio.run(run_orchestrator())
 
         self.assertEqual(result["status"], "success")
-        self.assertEqual(result["active_branch"], "auraheal/fix-visual-patch")
+        self.assertEqual(result["active_branch"], "auraheal-responsive-patch")
         self.assertEqual(result["updated_files_count"], 1)
         self.assertTrue(result["changes_committed"])
 

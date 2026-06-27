@@ -1,4 +1,22 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Force find the .env file relative to this file's directory
+backend_dir = Path(__file__).resolve().parents[1]
+env_path = backend_dir / ".env"
+
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path, override=True)
+else:
+    print(f"CRITICAL ERROR: .env file not found at {env_path}")
+
+import sys
 import asyncio
+
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 import logging
 from fastapi import FastAPI
 from app.core.config import settings
@@ -32,6 +50,14 @@ app.add_middleware(
 
 # Include v1 API router (declared below CORS middleware stack)
 app.include_router(api_v1_router, prefix="/api/v1")
+
+@app.on_event("startup")
+async def startup_event():
+    import sys
+    import asyncio
+
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 @app.get("/")
 def read_root():
